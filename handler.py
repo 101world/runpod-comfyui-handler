@@ -35,12 +35,33 @@ def start_comfyui():
     comfyui_path = "/workspace/ComfyUI"
     venv_python = "/workspace/ComfyUI/venv/bin/python"
     
-    if not os.path.exists(venv_python):
-        raise Exception("ComfyUI virtual environment not found")
+    # Check if ComfyUI directory exists
+    if not os.path.exists(comfyui_path):
+        raise Exception(f"ComfyUI directory not found at {comfyui_path}")
+    
+    # Determine Python executable
+    if os.path.exists(venv_python):
+        python_exec = venv_python
+        print(f"Using virtual environment Python: {python_exec}")
+    else:
+        # Fallback to system Python and activate environment if needed
+        python_exec = "python3"
+        print(f"Virtual environment not found, using system Python: {python_exec}")
+        
+        # Try to activate the virtual environment manually if it exists
+        venv_activate = "/workspace/ComfyUI/venv/bin/activate"
+        if os.path.exists(venv_activate):
+            # Set environment variables to activate venv
+            os.environ["VIRTUAL_ENV"] = "/workspace/ComfyUI/venv"
+            os.environ["PATH"] = f"/workspace/ComfyUI/venv/bin:{os.environ.get('PATH', '')}"
+            python_exec = "/workspace/ComfyUI/venv/bin/python"
+    
+    print(f"Starting ComfyUI with Python: {python_exec}")
+    print(f"ComfyUI path: {comfyui_path}")
     
     # Start ComfyUI in background
     process = subprocess.Popen(
-        [venv_python, "main.py", "--listen", "--port", "3001"],
+        [python_exec, "main.py", "--listen", "--port", "3001"],
         cwd=comfyui_path,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
