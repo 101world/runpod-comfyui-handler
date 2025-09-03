@@ -15,10 +15,13 @@ RUN apt-get update && apt-get install -y \
 # Copy handler script
 COPY handler.py /app/
 
-# Install Python dependencies
+# Install Python dependencies from PyPI first
 RUN pip install --no-cache-dir \
     runpod \
-    requests \
+    requests
+
+# Install PyTorch packages from CUDA index
+RUN pip install --no-cache-dir \
     torch \
     torchvision \
     torchaudio \
