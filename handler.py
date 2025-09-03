@@ -190,17 +190,29 @@ def start_comfyui():
     )
     
     # Wait for ComfyUI to start (check if port is responding)
-    max_wait = 60  # 60 seconds max
+    max_wait = 180  # 3 minutes max - increased timeout
+    print(f"⏱️  Waiting up to {max_wait} seconds for ComfyUI to start...")
+    
     for i in range(max_wait):
         try:
             response = requests.get("http://127.0.0.1:3001", timeout=5)
             if response.status_code == 200:
-                print(f"ComfyUI started successfully after {i} seconds")
+                print(f"✅ ComfyUI started successfully after {i} seconds")
                 return process
-        except:
+        except Exception as e:
+            if i % 10 == 0:  # Log every 10 seconds
+                print(f"⏳ Still waiting for ComfyUI... ({i}/{max_wait}s)")
             time.sleep(1)
     
-    raise Exception("ComfyUI failed to start within 60 seconds")
+    # ComfyUI failed to start - gather diagnostic info
+    try:
+        stdout, stderr = process.communicate(timeout=5)
+        print(f"🔍 ComfyUI stdout: {stdout.decode()[:1000]}...")
+        print(f"🔍 ComfyUI stderr: {stderr.decode()[:1000]}...")
+    except:
+        print("Could not capture ComfyUI logs")
+    
+    raise Exception(f"ComfyUI failed to start within {max_wait} seconds")
 
 def process_workflow(workflow_data: Dict[str, Any]):
     """Process the ComfyUI workflow"""
