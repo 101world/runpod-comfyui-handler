@@ -1,475 +1,376 @@
-#!/usr/bin/env python3
-
 import runpod
-import json
-import subprocess
-import os
-import time
 import requests
-import tempfile
+import websocket
+import json
+import uuid
+import time
 import base64
-from typing import Dict, Any
+import tempfile
+import os
+from io import BytesIO
 
-def setup_environment():
-    """Set up the environment before processing - matches user's exact commands"""
-    
-    print("🔧 Setting up environment...")
-    
-    # Your exact cleanup commands
-    cleanup_commands = [
-        "systemctl stop nginx 2>/dev/null || true",
-        "systemctl disable nginx 2>/dev/null || true", 
-        "pkill -f nginx || true",
-        "fuser -k 3001/tcp || true"
-    ]
-    
-    for cmd in cleanup_commands:
-        try:
-            print(f"Running: {cmd}")
-            subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
-        except Exception as e:
-            print(f"Command failed (expected): {e}")
-            pass  # Ignore errors like your || true
-    
-    print("✅ Environment setup completed")
-    return True
+# ComfyUI connection settings - adapted for your setup
+COMFY_HOST = "127.0.0.1:3001"  # Your ComfyUI port
+COMFY_API_AVAILABLE_INTERVAL_MS = 50
+COMFY_API_AVAILABLE_MAX_RETRIES = 500
 
-def start_comfyui():
-    """Start ComfyUI using the exact same process as user's Jupyter Lab"""
-    
-    # Based on standard RunPod network volume setup - prioritize /runpod-volume
-    possible_paths = [
-        "/runpod-volume/ComfyUI",    # MOST LIKELY - Standard RunPod network volume mount
-        "/workspace/ComfyUI",       # Alternative mount path  
-        "/content/ComfyUI",         # Google Colab style mount
-        "/ComfyUI",                 # Root level (unlikely)
-        "/opt/ComfyUI",            # System directory
-        "/app/ComfyUI",            # Application directory
-        "/home/ComfyUI",           # Home directory
-        "/mnt/ComfyUI",            # Manual mount point
-        "/vol/ComfyUI"             # Volume mount alternative
-    ]
-    
-    # First, let's discover what directories actually exist
-    print("🔍 Discovering available directories...")
-    
-    # Check root level directories
-    try:
-        root_dirs = os.listdir("/")
-        print(f"📁 Root directories: {[d for d in root_dirs if not d.startswith('.')][:10]}")
-        
-        # Look for anything that might be ComfyUI-related
-        comfyui_related = [d for d in root_dirs if 'comfy' in d.lower() or 'ComfyUI' in d]
-        if comfyui_related:
-            print(f"🎯 ComfyUI-related directories in root: {comfyui_related}")
-            # Add these to possible paths
-            for d in comfyui_related:
-                full_path = f"/{d}"
-                if full_path not in possible_paths:
-                    possible_paths.append(full_path)
-    except Exception as e:
-        print(f"Could not list root directories: {e}")
-    
-    # Check workspace if it exists
-    if os.path.exists("/workspace"):
-        try:
-            workspace_dirs = os.listdir("/workspace")
-            print(f"📁 Workspace directories: {workspace_dirs[:10]}")
-            
-            # Look for ComfyUI in workspace
-            for d in workspace_dirs:
-                if 'comfy' in d.lower() or 'ComfyUI' in d:
-                    full_path = f"/workspace/{d}"
-                    if full_path not in possible_paths:
-                        possible_paths.append(full_path)
-        except Exception as e:
-            print(f"Could not list workspace directories: {e}")
-    
-    # Check runpod-volume if it exists
-    if os.path.exists("/runpod-volume"):
-        try:
-            volume_dirs = os.listdir("/runpod-volume")
-            print(f"📁 RunPod volume directories: {volume_dirs[:10]}")
-            
-            # Look for ComfyUI in volume
-            for d in volume_dirs:
-                if 'comfy' in d.lower() or 'ComfyUI' in d:
-                    full_path = f"/runpod-volume/{d}"
-                    if full_path not in possible_paths:
-                        possible_paths.append(full_path)
-        except Exception as e:
-            print(f"Could not list volume directories: {e}")
-    
-    print(f"🔍 Checking these possible paths: {possible_paths}")
-    
-    comfyui_path = None
-    for path in possible_paths:
-        print(f"Checking: {path}")
-        if os.path.exists(path):
-            # Verify it's actually ComfyUI by checking for key files
-            main_py = os.path.join(path, "main.py")
-            if os.path.exists(main_py):
-                comfyui_path = path
-                print(f"✅ Found ComfyUI at: {path}")
-                break
-            else:
-                print(f"⚠️  Directory {path} exists but no main.py found")
-        else:
-            print(f"❌ Path {path} does not exist")
-    
-    if not comfyui_path:
-        # Final attempt - search the filesystem
-        print("🔍 Searching filesystem for ComfyUI...")
-        try:
-            # Search for main.py files that might be ComfyUI
-            result = subprocess.run(
-                "find / -name 'main.py' -path '*/ComfyUI/*' 2>/dev/null | head -5",
-                shell=True, capture_output=True, text=True, timeout=30
-            )
-            if result.stdout.strip():
-                print(f"Found potential ComfyUI main.py files: {result.stdout.strip()}")
-                # Take the first one
-                main_py_path = result.stdout.strip().split('\n')[0]
-                potential_path = os.path.dirname(main_py_path)
-                if potential_path and os.path.exists(potential_path):
-                    comfyui_path = potential_path
-                    print(f"✅ Found ComfyUI via filesystem search at: {potential_path}")
-        except Exception as e:
-            print(f"Filesystem search failed: {e}")
-        
-        if not comfyui_path:
-            discovered_info = {
-                "root_dirs": root_dirs if 'root_dirs' in locals() else "Could not list",
-                "workspace_exists": os.path.exists("/workspace"),
-                "volume_exists": os.path.exists("/runpod-volume"),
-                "checked_paths": possible_paths
-            }
-            raise Exception(f"ComfyUI not found. Discovery info: {discovered_info}")
-    
-    venv_activate = f"{comfyui_path}/venv/bin/activate"
-    main_py = f"{comfyui_path}/main.py"
-    
-    print(f"🔍 Checking ComfyUI setup...")
-    print(f"ComfyUI path: {comfyui_path}")
-    print(f"Virtual env: {venv_activate}")
-    print(f"Main script: {main_py}")
-    
-    # Check if paths exist
-    if not os.path.exists(comfyui_path):
-        raise Exception(f"ComfyUI directory not found at {comfyui_path}")
-    
-    if not os.path.exists(venv_activate):
-        raise Exception(f"Virtual environment activation script not found at {venv_activate}")
-        
-    if not os.path.exists(main_py):
-        raise Exception(f"ComfyUI main.py not found at {main_py}")
-    
-    print("✅ All ComfyUI components found")
-    
-    # Use the exact same command as user's Jupyter Lab, but with dynamic path
-    startup_command = f"""
-    cd {comfyui_path} && 
-    source venv/bin/activate && 
-    fuser -k 3001/tcp || true && 
-    python main.py --listen --port 3001
+def check_server(url, retries=500, delay=50):
     """
-    
-    print(f"🚀 Starting ComfyUI with command: {startup_command}")
-    
-    # Update PYTHONPATH to match the found ComfyUI location
-    os.environ["PYTHONPATH"] = comfyui_path
-    
-    # Start ComfyUI in background using shell=True to handle the source command
-    process = subprocess.Popen(
-        startup_command,
-        shell=True,
-        cwd=comfyui_path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        preexec_fn=os.setsid  # Create new process group
-    )
-    
-    # Wait for ComfyUI to start (check if port is responding)
-    max_wait = 600  # 10 minutes max - FLUX models need more time
-    print(f"⏱️  Waiting up to {max_wait} seconds for ComfyUI to start...")
-    
-    for i in range(max_wait):
+    Check if ComfyUI server is reachable
+    """
+    print(f"🔍 Checking ComfyUI API server at {url}...")
+    for i in range(retries):
         try:
-            response = requests.get("http://127.0.0.1:3001", timeout=5)
+            response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                print(f"✅ ComfyUI started successfully after {i} seconds")
-                return process
-        except Exception as e:
-            if i % 30 == 0:  # Log every 30 seconds instead of 10
-                print(f"⏳ Still waiting for ComfyUI... ({i}/{max_wait}s) - FLUX models loading...")
-            time.sleep(1)
+                print(f"✅ ComfyUI API is reachable")
+                return True
+        except requests.RequestException:
+            pass
+        time.sleep(delay / 1000)
     
-    # ComfyUI failed to start - gather diagnostic info
-    try:
-        stdout, stderr = process.communicate(timeout=5)
-        print(f"🔍 ComfyUI stdout: {stdout.decode()[:1000]}...")
-        print(f"🔍 ComfyUI stderr: {stderr.decode()[:1000]}...")
-    except:
-        print("Could not capture ComfyUI logs")
-    
-    raise Exception(f"ComfyUI failed to start within {max_wait} seconds")
+    print(f"❌ Failed to connect to ComfyUI at {url} after {retries} attempts.")
+    return False
 
-def process_workflow(workflow_data: Dict[str, Any]):
-    """Process the ComfyUI workflow"""
+def validate_input(job_input):
+    """
+    Validates the input for the handler function.
+    """
+    if job_input is None:
+        return None, "Please provide input"
     
-    try:
-        # Send workflow to ComfyUI API
-        response = requests.post(
-            "http://127.0.0.1:3001/prompt",
-            json={"prompt": workflow_data},
-            timeout=300  # 5 minutes timeout
-        )
-        
-        if response.status_code != 200:
-            raise Exception(f"ComfyUI API error: {response.status_code}")
-        
-        result = response.json()
-        prompt_id = result.get("prompt_id")
-        
-        if not prompt_id:
-            raise Exception("No prompt_id returned from ComfyUI")
-        
-        # Poll for completion
-        max_wait = 300  # 5 minutes
-        for i in range(max_wait):
-            history_response = requests.get(f"http://127.0.0.1:3001/history/{prompt_id}")
-            
-            if history_response.status_code == 200:
-                history = history_response.json()
-                
-                if prompt_id in history:
-                    # Get the generated images
-                    outputs = history[prompt_id].get("outputs", {})
-                    images = []
-                    
-                    for node_id, node_output in outputs.items():
-                        if "images" in node_output:
-                            for image_info in node_output["images"]:
-                                filename = image_info["filename"]
-                                # Get image from ComfyUI
-                                img_response = requests.get(f"http://127.0.0.1:3001/view?filename={filename}")
-                                if img_response.status_code == 200:
-                                    # Convert to base64
-                                    img_base64 = base64.b64encode(img_response.content).decode()
-                                    images.append({
-                                        "filename": filename,
-                                        "data": img_base64
-                                    })
-                    
-                    return {"images": images, "prompt_id": prompt_id}
-            
-            time.sleep(1)
-        
-        raise Exception("Workflow processing timed out")
-        
-    except Exception as e:
-        raise Exception(f"Workflow processing failed: {str(e)}")
-
-def run_path_discovery():
-    """Comprehensive path discovery to find where ComfyUI is mounted"""
-    
-    discovery_info = {
-        "root_directories": [],
-        "potential_comfy_locations": [],
-        "mounted_volumes": [],
-        "environment_variables": {},
-        "current_working_directory": os.getcwd(),
-        "user_info": {},
-        "disk_usage": [],
-        "filesystem_search_results": []
-    }
-    
-    print("🔍 Starting comprehensive path discovery...")
-    
-    try:
-        # Get root directories
-        print("📁 Scanning root directories...")
-        for item in os.listdir('/'):
-            full_path = f'/{item}'
-            if os.path.isdir(full_path):
-                try:
-                    size = len(os.listdir(full_path)) if os.access(full_path, os.R_OK) else "no_access"
-                    discovery_info["root_directories"].append({
-                        "name": item,
-                        "path": full_path,
-                        "size": size,
-                        "accessible": os.access(full_path, os.R_OK)
-                    })
-                except Exception as e:
-                    discovery_info["root_directories"].append({
-                        "name": item,
-                        "path": full_path,
-                        "size": "error",
-                        "error": str(e)
-                    })
-    except Exception as e:
-        discovery_info["root_scan_error"] = str(e)
-    
-    # Check common mount points for ComfyUI
-    potential_paths = [
-        "/workspace/ComfyUI",
-        "/runpod-volume/ComfyUI", 
-        "/content/ComfyUI",
-        "/opt/ComfyUI",
-        "/app/ComfyUI",
-        "/root/ComfyUI",
-        "/home/ComfyUI",
-        "/mnt/ComfyUI",
-        "/vol/ComfyUI",
-        "/ComfyUI",
-        # Check parent directories too
-        "/workspace",
-        "/runpod-volume",
-        "/content",
-        "/opt",
-        "/app",
-        "/root",
-        "/home",
-        "/mnt",
-        "/vol"
-    ]
-    
-    print("🔍 Checking potential ComfyUI locations...")
-    for path in potential_paths:
+    if isinstance(job_input, str):
         try:
-            exists = os.path.exists(path)
-            location_info = {
-                "path": path,
-                "exists": exists
+            job_input = json.loads(job_input)
+        except json.JSONDecodeError:
+            return None, "Invalid JSON format in input"
+    
+    workflow = job_input.get("workflow")
+    if workflow is None:
+        return None, "Missing 'workflow' parameter"
+    
+    images = job_input.get("images")
+    if images is not None:
+        if not isinstance(images, list) or not all(
+            "name" in image and "image" in image for image in images
+        ):
+            return (
+                None,
+                "'images' must be a list of objects with 'name' and 'image' keys",
+            )
+    
+    return {"workflow": workflow, "images": images}, None
+
+def upload_images(images):
+    """
+    Upload base64 encoded images to ComfyUI
+    """
+    if not images:
+        return {"status": "success", "message": "No images to upload", "details": []}
+    
+    responses = []
+    upload_errors = []
+    print(f"📤 Uploading {len(images)} image(s)...")
+    
+    for image in images:
+        try:
+            name = image["name"]
+            image_data_uri = image["image"]
+            
+            # Strip Data URI prefix if present
+            if "," in image_data_uri:
+                base64_data = image_data_uri.split(",", 1)[1]
+            else:
+                base64_data = image_data_uri
+            
+            blob = base64.b64decode(base64_data)
+            
+            # Prepare form data
+            files = {
+                "image": (name, BytesIO(blob), "image/png"),
+                "overwrite": (None, "true"),
             }
             
-            if exists:
-                location_info["is_directory"] = os.path.isdir(path)
-                location_info["readable"] = os.access(path, os.R_OK)
-                
-                if os.path.isdir(path) and os.access(path, os.R_OK):
-                    try:
-                        contents = os.listdir(path)
-                        location_info["contents_count"] = len(contents)
-                        location_info["contents_sample"] = contents[:10]  # First 10 items
-                        
-                        # Check for ComfyUI-specific files
-                        has_main_py = "main.py" in contents
-                        has_comfyui_files = any("comfy" in item.lower() for item in contents)
-                        location_info["has_main_py"] = has_main_py
-                        location_info["has_comfyui_files"] = has_comfyui_files
-                        
-                    except Exception as e:
-                        location_info["list_error"] = str(e)
-            
-            discovery_info["potential_comfy_locations"].append(location_info)
+            # Upload to ComfyUI
+            response = requests.post(
+                f"http://{COMFY_HOST}/upload/image", files=files, timeout=30
+            )
+            response.raise_for_status()
+            responses.append(f"Successfully uploaded {name}")
+            print(f"✅ Successfully uploaded {name}")
             
         except Exception as e:
-            discovery_info["potential_comfy_locations"].append({
-                "path": path,
-                "error": str(e)
-            })
+            error_msg = f"Error uploading {image.get('name', 'unknown')}: {e}"
+            print(f"❌ {error_msg}")
+            upload_errors.append(error_msg)
     
-    # Get mount information
-    print("💾 Checking mount points...")
-    try:
-        mount_result = subprocess.run(['mount'], capture_output=True, text=True, timeout=10)
-        if mount_result.returncode == 0:
-            mounts = []
-            for line in mount_result.stdout.split('\n'):
-                if line.strip():
-                    mounts.append(line.strip())
-            discovery_info["mounted_volumes"] = mounts
-    except Exception as e:
-        discovery_info["mount_error"] = str(e)
+    if upload_errors:
+        return {
+            "status": "error",
+            "message": "Some images failed to upload",
+            "details": upload_errors,
+        }
     
-    # Get disk usage for directories
-    print("📊 Checking disk usage...")
-    try:
-        df_result = subprocess.run(['df', '-h'], capture_output=True, text=True, timeout=10)
-        if df_result.returncode == 0:
-            discovery_info["disk_usage"] = df_result.stdout.split('\n')
-    except Exception as e:
-        discovery_info["df_error"] = str(e)
-    
-    # Get environment variables related to paths
-    print("🌐 Checking environment variables...")
-    for key, value in os.environ.items():
-        if any(keyword in key.lower() for keyword in ['path', 'home', 'workspace', 'volume', 'mount', 'comfy']):
-            discovery_info["environment_variables"][key] = value
-    
-    # Get user information
-    try:
-        discovery_info["user_info"]["uid"] = os.getuid()
-        discovery_info["user_info"]["gid"] = os.getgid()
-        discovery_info["user_info"]["username"] = os.getenv('USER', 'unknown')
-    except Exception as e:
-        discovery_info["user_error"] = str(e)
-    
-    # Search for ComfyUI installations
-    print("🔎 Searching for ComfyUI installations...")
-    try:
-        # Search for main.py files that might be ComfyUI
-        search_result = subprocess.run(
-            "find / -name 'main.py' 2>/dev/null | head -20",
-            shell=True, capture_output=True, text=True, timeout=30
-        )
-        if search_result.stdout.strip():
-            main_py_files = search_result.stdout.strip().split('\n')
-            discovery_info["filesystem_search_results"] = main_py_files
-    except Exception as e:
-        discovery_info["search_error"] = str(e)
-    
-    print("✅ Path discovery completed")
     return {
         "status": "success",
-        "discovery": discovery_info,
-        "message": "Comprehensive path discovery completed"
+        "message": "All images uploaded successfully",
+        "details": responses,
     }
 
-def handler(job):
-    """Main handler function for RunPod serverless"""
+def queue_workflow(workflow, client_id):
+    """
+    Queue a workflow to be processed by ComfyUI
+    """
+    payload = {"prompt": workflow, "client_id": client_id}
+    data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    
+    response = requests.post(
+        f"http://{COMFY_HOST}/prompt", data=data, headers=headers, timeout=30
+    )
+    
+    if response.status_code == 400:
+        print(f"❌ ComfyUI validation error: {response.text}")
+        try:
+            error_data = response.json()
+            error_message = "Workflow validation failed"
+            if "error" in error_data:
+                error_info = error_data["error"]
+                if isinstance(error_info, dict):
+                    error_message = error_info.get("message", error_message)
+                else:
+                    error_message = str(error_info)
+            raise ValueError(f"{error_message}. Response: {response.text}")
+        except json.JSONDecodeError:
+            raise ValueError(f"ComfyUI validation failed: {response.text}")
+    
+    response.raise_for_status()
+    return response.json()
+
+def get_history(prompt_id):
+    """
+    Retrieve the history of a prompt
+    """
+    response = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+def get_image_data(filename, subfolder, image_type):
+    """
+    Fetch image bytes from ComfyUI
+    """
+    print(f"📥 Fetching image: type={image_type}, subfolder={subfolder}, filename={filename}")
+    
+    params = {"filename": filename, "subfolder": subfolder, "type": image_type}
     
     try:
-        print("Starting job processing...")
-        
-        # Get job input
-        job_input = job.get("input", {})
-        
-        # Check if this is a discovery request
-        if job_input.get('action') == 'discover_paths' or job_input.get('debug_mode') or job_input.get('debug'):
-            print("🔍 Running path discovery...")
-            return run_path_discovery()
-        
-        # Set up environment
-        setup_environment()
-        
-        # Start ComfyUI
-        comfyui_process = start_comfyui()
-        
-        try:
-            # Get workflow from job input
-            workflow = job_input.get("workflow", {})
-            
-            if not workflow:
-                raise Exception("No workflow provided in job input")
-            
-            # Process the workflow
-            result = process_workflow(workflow)
-            
-            return {"status": "success", "output": result}
-            
-        finally:
-            # Clean up ComfyUI process
-            try:
-                comfyui_process.terminate()
-                comfyui_process.wait(timeout=10)
-            except:
-                comfyui_process.kill()
-        
+        response = requests.get(f"http://{COMFY_HOST}/view", params=params, timeout=60)
+        response.raise_for_status()
+        print(f"✅ Successfully fetched image data for {filename}")
+        return response.content
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        print(f"❌ Error fetching image data for {filename}: {e}")
+        return None
+
+def handler(job):
+    """
+    Main handler function for RunPod jobs
+    """
+    job_input = job["input"]
+    job_id = job["id"]
+    
+    print(f"🚀 Processing job {job_id}")
+    
+    # Validate input
+    validated_data, error_message = validate_input(job_input)
+    if error_message:
+        return {"error": error_message}
+    
+    workflow = validated_data["workflow"]
+    input_images = validated_data.get("images")
+    
+    # Check if ComfyUI is available
+    if not check_server(
+        f"http://{COMFY_HOST}/",
+        COMFY_API_AVAILABLE_MAX_RETRIES,
+        COMFY_API_AVAILABLE_INTERVAL_MS,
+    ):
+        return {
+            "error": f"ComfyUI server ({COMFY_HOST}) not reachable after multiple retries."
+        }
+    
+    # Upload input images if provided
+    if input_images:
+        upload_result = upload_images(input_images)
+        if upload_result["status"] == "error":
+            return {
+                "error": "Failed to upload one or more input images",
+                "details": upload_result["details"],
+            }
+    
+    # Set up WebSocket connection
+    client_id = str(uuid.uuid4())
+    ws_url = f"ws://{COMFY_HOST}/ws?clientId={client_id}"
+    
+    ws = None
+    prompt_id = None
+    output_data = []
+    errors = []
+    
+    try:
+        # Connect to WebSocket
+        print(f"🔌 Connecting to WebSocket: {ws_url}")
+        ws = websocket.WebSocket()
+        ws.connect(ws_url, timeout=10)
+        print(f"✅ WebSocket connected")
+        
+        # Queue the workflow
+        try:
+            queued_workflow = queue_workflow(workflow, client_id)
+            prompt_id = queued_workflow.get("prompt_id")
+            if not prompt_id:
+                raise ValueError(f"No prompt_id in response: {queued_workflow}")
+            print(f"📋 Workflow queued with prompt_id: {prompt_id}")
+        except Exception as e:
+            if isinstance(e, ValueError):
+                raise e
+            else:
+                raise ValueError(f"Unexpected error queuing workflow: {e}")
+        
+        # Wait for execution completion via WebSocket
+        print(f"⏳ Waiting for workflow execution ({prompt_id})...")
+        execution_done = False
+        
+        while True:
+            try:
+                out = ws.recv()
+                if isinstance(out, str):
+                    message = json.loads(out)
+                    
+                    if message.get("type") == "status":
+                        status_data = message.get("data", {}).get("status", {})
+                        queue_remaining = status_data.get('exec_info', {}).get('queue_remaining', 'N/A')
+                        print(f"📊 Status update: {queue_remaining} items remaining in queue")
+                    
+                    elif message.get("type") == "executing":
+                        data = message.get("data", {})
+                        if (
+                            data.get("node") is None
+                            and data.get("prompt_id") == prompt_id
+                        ):
+                            print(f"✅ Execution finished for prompt {prompt_id}")
+                            execution_done = True
+                            break
+                    
+                    elif message.get("type") == "execution_error":
+                        data = message.get("data", {})
+                        if data.get("prompt_id") == prompt_id:
+                            error_details = f"Node Type: {data.get('node_type')}, Node ID: {data.get('node_id')}, Message: {data.get('exception_message')}"
+                            print(f"❌ Execution error: {error_details}")
+                            errors.append(f"Workflow execution error: {error_details}")
+                            break
+                
+            except websocket.WebSocketTimeoutException:
+                print(f"⏳ WebSocket timeout, still waiting...")
+                continue
+            except Exception as e:
+                print(f"❌ WebSocket error: {e}")
+                raise
+        
+        if not execution_done and not errors:
+            raise ValueError("Workflow monitoring loop exited without confirmation of completion or error.")
+        
+        # Fetch results from history
+        print(f"📚 Fetching history for prompt {prompt_id}...")
+        history = get_history(prompt_id)
+        
+        if prompt_id not in history:
+            error_msg = f"Prompt ID {prompt_id} not found in history after execution."
+            print(f"❌ {error_msg}")
+            if not errors:
+                return {"error": error_msg}
+            else:
+                errors.append(error_msg)
+                return {"error": "Job processing failed", "details": errors}
+        
+        # Process outputs
+        prompt_history = history.get(prompt_id, {})
+        outputs = prompt_history.get("outputs", {})
+        
+        if not outputs:
+            warning_msg = f"No outputs found in history for prompt {prompt_id}."
+            print(f"⚠️ {warning_msg}")
+            if not errors:
+                errors.append(warning_msg)
+        
+        print(f"🔄 Processing {len(outputs)} output nodes...")
+        
+        for node_id, node_output in outputs.items():
+            if "images" in node_output:
+                print(f"🖼️ Node {node_id} contains {len(node_output['images'])} image(s)")
+                
+                for image_info in node_output["images"]:
+                    filename = image_info.get("filename")
+                    subfolder = image_info.get("subfolder", "")
+                    img_type = image_info.get("type")
+                    
+                    # Skip temp images
+                    if img_type == "temp":
+                        print(f"⏭️ Skipping temp image {filename}")
+                        continue
+                    
+                    if not filename:
+                        warn_msg = f"Skipping image in node {node_id} due to missing filename"
+                        print(f"⚠️ {warn_msg}")
+                        errors.append(warn_msg)
+                        continue
+                    
+                    image_bytes = get_image_data(filename, subfolder, img_type)
+                    if image_bytes:
+                        try:
+                            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+                            output_data.append({
+                                "filename": filename,
+                                "type": "base64",
+                                "data": base64_image,
+                            })
+                            print(f"✅ Encoded {filename} as base64")
+                        except Exception as e:
+                            error_msg = f"Error encoding {filename} to base64: {e}"
+                            print(f"❌ {error_msg}")
+                            errors.append(error_msg)
+                    else:
+                        error_msg = f"Failed to fetch image data for {filename}"
+                        errors.append(error_msg)
+    
+    except Exception as e:
+        print(f"❌ Handler error: {e}")
+        return {"error": f"An error occurred: {e}"}
+    
+    finally:
+        if ws:
+            try:
+                ws.close()
+                print(f"🔌 WebSocket connection closed")
+            except:
+                pass
+    
+    # Prepare final result
+    final_result = {}
+    
+    if errors:
+        print(f"⚠️ Job completed with {len(errors)} error(s)")
+        final_result["errors"] = errors
+    
+    if output_data:
+        print(f"✅ Job completed successfully. Returning {len(output_data)} image(s)")
+        final_result["images"] = output_data
+    else:
+        print(f"ℹ️ Job completed but produced no images")
+        final_result["images"] = []
+    
+    return final_result
 
 if __name__ == "__main__":
-    print("Starting RunPod Serverless Handler for ComfyUI...")
+    print("🚀 Starting RunPod ComfyUI Handler...")
     runpod.serverless.start({"handler": handler})

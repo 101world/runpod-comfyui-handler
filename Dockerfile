@@ -1,38 +1,30 @@
-# Use the official Python runtime as a parent image
-FROM python:3.10-slim
+# Use RunPod base image
+FROM runpod/base:0.4.0-cuda12.1.0
 
 # Set working directory
-WORKDIR /app
+WORKDIR /
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
     git \
-    build-essential \
+    python3 \
+    python3-venv \
+    python3-pip \
+    wget \
+    curl \
+    fuser \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy handler script
-COPY handler.py /app/
+# Copy handler and requirements
+COPY handler.py /handler.py
+COPY requirements.txt /requirements.txt
 
-# Install Python dependencies from PyPI first
-RUN pip install --no-cache-dir \
-    runpod \
-    requests
+# Install Python dependencies for handler
+RUN pip install -r /requirements.txt
 
-# Install PyTorch packages from CUDA index
-RUN pip install --no-cache-dir \
-    torch \
-    torchvision \
-    torchaudio \
-    --index-url https://download.pytorch.org/whl/cu121
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Set environment variables
-ENV PYTHONPATH=/workspace/ComfyUI
-ENV CUDA_VISIBLE_DEVICES=0
-
-# Expose port (optional, for debugging)
-EXPOSE 3001
-
-# Run the handler
-CMD ["python", "handler.py"]
+# Set the entrypoint
+CMD ["/entrypoint.sh"]
