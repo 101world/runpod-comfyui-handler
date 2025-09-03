@@ -11,60 +11,71 @@ import base64
 from typing import Dict, Any
 
 def setup_environment():
-    """Set up the environment before processing"""
+    """Set up the environment before processing - matches user's exact commands"""
     
-    # Your cleanup commands converted to Python
+    print("🔧 Setting up environment...")
+    
+    # Your exact cleanup commands
     cleanup_commands = [
-        ["systemctl", "stop", "nginx"],
-        ["systemctl", "disable", "nginx"], 
-        ["pkill", "-f", "nginx"],
-        ["fuser", "-k", "3001/tcp"]
+        "systemctl stop nginx 2>/dev/null || true",
+        "systemctl disable nginx 2>/dev/null || true", 
+        "pkill -f nginx || true",
+        "fuser -k 3001/tcp || true"
     ]
     
     for cmd in cleanup_commands:
         try:
-            subprocess.run(cmd, capture_output=True, timeout=10)
-        except:
+            print(f"Running: {cmd}")
+            subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
+        except Exception as e:
+            print(f"Command failed (expected): {e}")
             pass  # Ignore errors like your || true
     
+    print("✅ Environment setup completed")
     return True
 
 def start_comfyui():
-    """Start ComfyUI in the background"""
+    """Start ComfyUI using the exact same process as user's Jupyter Lab"""
     
     comfyui_path = "/workspace/ComfyUI"
-    venv_python = "/workspace/ComfyUI/venv/bin/python"
+    venv_activate = "/workspace/ComfyUI/venv/bin/activate"
+    main_py = "/workspace/ComfyUI/main.py"
     
-    # Check if ComfyUI directory exists
+    print(f"🔍 Checking ComfyUI setup...")
+    print(f"ComfyUI path: {comfyui_path}")
+    print(f"Virtual env: {venv_activate}")
+    print(f"Main script: {main_py}")
+    
+    # Check if paths exist
     if not os.path.exists(comfyui_path):
         raise Exception(f"ComfyUI directory not found at {comfyui_path}")
     
-    # Determine Python executable
-    if os.path.exists(venv_python):
-        python_exec = venv_python
-        print(f"Using virtual environment Python: {python_exec}")
-    else:
-        # Fallback to system Python and activate environment if needed
-        python_exec = "python3"
-        print(f"Virtual environment not found, using system Python: {python_exec}")
+    if not os.path.exists(venv_activate):
+        raise Exception(f"Virtual environment activation script not found at {venv_activate}")
         
-        # Try to activate the virtual environment manually if it exists
-        venv_activate = "/workspace/ComfyUI/venv/bin/activate"
-        if os.path.exists(venv_activate):
-            # Set environment variables to activate venv
-            os.environ["VIRTUAL_ENV"] = "/workspace/ComfyUI/venv"
-            os.environ["PATH"] = f"/workspace/ComfyUI/venv/bin:{os.environ.get('PATH', '')}"
-            python_exec = "/workspace/ComfyUI/venv/bin/python"
+    if not os.path.exists(main_py):
+        raise Exception(f"ComfyUI main.py not found at {main_py}")
     
-    print(f"Starting ComfyUI with Python: {python_exec}")
-    print(f"ComfyUI path: {comfyui_path}")
+    print("✅ All ComfyUI components found")
     
-    # Start ComfyUI in background
+    # Use the exact same command as user's Jupyter Lab
+    startup_command = f"""
+    cd /workspace/ComfyUI && 
+    source venv/bin/activate && 
+    fuser -k 3001/tcp || true && 
+    python main.py --listen --port 3001
+    """
+    
+    print(f"🚀 Starting ComfyUI with command: {startup_command}")
+    
+    # Start ComfyUI in background using shell=True to handle the source command
     process = subprocess.Popen(
-        [python_exec, "main.py", "--listen", "--port", "3001"],
+        startup_command,
+        shell=True,
         cwd=comfyui_path,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
+        preexec_fn=os.setsid  # Create new process group
     )
     
     # Wait for ComfyUI to start (check if port is responding)
