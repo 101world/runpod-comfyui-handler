@@ -8,7 +8,7 @@ WORKDIR /
 # Install system dependencies for network volume ComfyUI
 RUN apt-get update && apt-get install -y \
     curl \
-    fuser \
+    psmisc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python runtime dependencies for the handler
