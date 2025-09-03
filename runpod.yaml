@@ -1,0 +1,27 @@
+# RunPod Configuration
+image_name: "runpod-comfyui-handler"
+base_image: "runpod/base:0.4.0-cuda12.1.0"
+cuda_version: "12.1.0"
+python_version: "3.10"
+
+# GPU Requirements
+gpu_types: ["NVIDIA RTX A4000", "NVIDIA RTX A5000", "NVIDIA RTX 3090", "NVIDIA RTX 4090"]
+gpu_count: 1
+
+# Container Configuration
+container_disk: 5
+memory: "16GB"
+
+# Ports
+ports:
+  - 3001
+
+# Environment Variables
+environment_variables:
+  COMFY_HOST: "127.0.0.1"
+  COMFY_PORT: "3001"
+
+# Build Configuration
+build_commands:
+  - "apt-get update && apt-get install -y curl psmisc"
+  - "pip install -r requirements.txt"
