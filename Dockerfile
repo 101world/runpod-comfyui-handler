@@ -23,4 +23,9 @@ COPY test_input.json /test_input.json
 RUN mkdir -p /workspace/ComfyUI
 
 # Set the entrypoint to start ComfyUI directly
-CMD ["/bin/bash", "-c", "cd /workspace/ComfyUI && source venv/bin/activate && python main.py --port 3001"]
+# Copy startup script
+COPY start-comfyui.sh /start-comfyui.sh
+RUN chmod +x /start-comfyui.sh
+
+# Set the entrypoint to our startup script
+CMD ["/start-comfyui.sh"]
