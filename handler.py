@@ -190,7 +190,7 @@ def start_comfyui():
     )
     
     # Wait for ComfyUI to start (check if port is responding)
-    max_wait = 180  # 3 minutes max - increased timeout
+    max_wait = 600  # 10 minutes max - FLUX models need more time
     print(f"⏱️  Waiting up to {max_wait} seconds for ComfyUI to start...")
     
     for i in range(max_wait):
@@ -200,8 +200,8 @@ def start_comfyui():
                 print(f"✅ ComfyUI started successfully after {i} seconds")
                 return process
         except Exception as e:
-            if i % 10 == 0:  # Log every 10 seconds
-                print(f"⏳ Still waiting for ComfyUI... ({i}/{max_wait}s)")
+            if i % 30 == 0:  # Log every 30 seconds instead of 10
+                print(f"⏳ Still waiting for ComfyUI... ({i}/{max_wait}s) - FLUX models loading...")
             time.sleep(1)
     
     # ComfyUI failed to start - gather diagnostic info
