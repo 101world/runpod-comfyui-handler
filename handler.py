@@ -166,6 +166,41 @@ def start_comfyui():
     
     print("✅ All ComfyUI components found")
     
+    # Check additional requirements
+    print("🔍 Checking additional ComfyUI requirements...")
+    
+    # Check if models directory exists
+    models_dir = os.path.join(comfyui_path, "models")
+    if os.path.exists(models_dir):
+        print(f"✅ Models directory found: {models_dir}")
+        # List some model subdirectories
+        try:
+            model_subdirs = [d for d in os.listdir(models_dir) if os.path.isdir(os.path.join(models_dir, d))]
+            print(f"📁 Model subdirectories: {model_subdirs[:5]}")  # Show first 5
+        except Exception as e:
+            print(f"⚠️  Could not list model subdirectories: {e}")
+    else:
+        print(f"⚠️  Models directory not found at {models_dir}")
+    
+    # Check Python virtual environment
+    python_executable = os.path.join(comfyui_path, "venv", "bin", "python")
+    if os.path.exists(python_executable):
+        print(f"✅ Python executable found: {python_executable}")
+    else:
+        print(f"⚠️  Python executable not found at {python_executable}")
+    
+    # Test virtual environment activation
+    print("🔧 Testing virtual environment...")
+    test_venv_cmd = f"cd {comfyui_path} && source venv/bin/activate && python --version"
+    try:
+        venv_result = subprocess.run(test_venv_cmd, shell=True, capture_output=True, text=True, timeout=10)
+        if venv_result.returncode == 0:
+            print(f"✅ Virtual environment test successful: {venv_result.stdout.strip()}")
+        else:
+            print(f"⚠️  Virtual environment test failed: {venv_result.stderr.strip()}")
+    except Exception as e:
+        print(f"⚠️  Virtual environment test error: {e}")
+    
     # Use the exact same command as user's Jupyter Lab, but with dynamic path
     startup_command = f"""
     cd {comfyui_path} && 
@@ -205,14 +240,63 @@ def start_comfyui():
             time.sleep(1)
     
     # ComfyUI failed to start - gather diagnostic info
-    try:
-        stdout, stderr = process.communicate(timeout=5)
-        print(f"🔍 ComfyUI stdout: {stdout.decode()[:1000]}...")
-        print(f"🔍 ComfyUI stderr: {stderr.decode()[:1000]}...")
-    except:
-        print("Could not capture ComfyUI logs")
+    print("❌ ComfyUI failed to start, gathering diagnostic information...")
     
-    raise Exception(f"ComfyUI failed to start within {max_wait} seconds")
+    try:
+        # Check if process is still running
+        if process.poll() is None:
+            print("🔍 ComfyUI process is still running, attempting to get logs...")
+            # Try to get partial output
+            try:
+                stdout, stderr = process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                print("⏰ Process still running after timeout, killing it...")
+                process.kill()
+                stdout, stderr = process.communicate()
+        else:
+            print(f"� ComfyUI process exited with code: {process.returncode}")
+            stdout, stderr = process.communicate()
+        
+        # Display the logs
+        if stdout:
+            stdout_text = stdout.decode()[:2000]  # First 2000 chars
+            print(f"� ComfyUI stdout (first 2000 chars):")
+            print(stdout_text)
+        else:
+            print("📄 No stdout output")
+            
+        if stderr:
+            stderr_text = stderr.decode()[:2000]  # First 2000 chars
+            print(f"📄 ComfyUI stderr (first 2000 chars):")
+            print(stderr_text)
+        else:
+            print("📄 No stderr output")
+            
+    except Exception as e:
+        print(f"⚠️  Could not capture ComfyUI logs: {e}")
+    
+    # Additional system diagnostics
+    print("🔍 System diagnostics:")
+    try:
+        # Check port 3001
+        port_check = subprocess.run("netstat -tlnp | grep 3001 || echo 'Port 3001 not in use'", 
+                                   shell=True, capture_output=True, text=True, timeout=5)
+        print(f"🔌 Port 3001 status: {port_check.stdout.strip()}")
+        
+        # Check memory usage
+        mem_check = subprocess.run("free -h", shell=True, capture_output=True, text=True, timeout=5)
+        if mem_check.returncode == 0:
+            print(f"💾 Memory status: {mem_check.stdout.strip()}")
+        
+        # Check disk space
+        disk_check = subprocess.run(f"df -h {comfyui_path}", shell=True, capture_output=True, text=True, timeout=5)
+        if disk_check.returncode == 0:
+            print(f"💽 Disk space: {disk_check.stdout.strip()}")
+            
+    except Exception as e:
+        print(f"⚠️  System diagnostics error: {e}")
+    
+    raise Exception(f"ComfyUI failed to start within {max_wait} seconds. Check logs above for details.")
 
 def process_workflow(workflow_data: Dict[str, Any]):
     """Process the ComfyUI workflow"""
