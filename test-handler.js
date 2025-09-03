@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const RUNPOD_ENDPOINT = 'https://api.runpod.ai/v2/r6xsc04garly9d/run';
+const RUNPOD_ENDPOINT = 'https://api.runpod.ai/v2/7jif0u23zst5r9/run';
 const API_KEY = process.env.RUNPOD_API_KEY || 'your_api_key_here';
 
 // Simple Social Twin workflow for testing
@@ -126,7 +126,7 @@ async function monitorJob(jobId) {
         try {
             await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds
             
-            const statusResponse = await axios.get(`https://api.runpod.ai/v2/r6xsc04garly9d/status/${jobId}`, {
+            const statusResponse = await axios.get(`https://api.runpod.ai/v2/7jif0u23zst5r9/status/${jobId}`, {
                 headers: {
                     'Authorization': `Bearer ${API_KEY}`
                 }
