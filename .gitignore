@@ -1,7 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
 *.so
 .Python
 build/
@@ -21,7 +21,7 @@ wheels/
 *.egg
 MANIFEST
 
-# Virtual environments
+# Environment variables
 .env
 .venv
 env/
@@ -50,32 +50,17 @@ Thumbs.db
 *.log
 logs/
 
+# Test coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# API Keys and secrets
+*api_key*
+*secret*
+config.json
+
 # RunPod specific
 .runpod_cache/
-runpod_logs/
-
-# Model files (too large for git)
-*.safetensors
-*.ckpt
-*.pth
-*.bin
-
-# Generated images
-output/
-*.png
-*.jpg
-*.jpeg
-
-# API keys and secrets
-.env.local
-config.json
-secrets.json
-
-# Test artifacts
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Node.js (for test scripts)
-node_modules/
-package-lock.json

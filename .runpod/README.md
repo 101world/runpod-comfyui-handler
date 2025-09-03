@@ -1,46 +1,58 @@
-# RunPod ComfyUI Handler - Network Volume Edition
+![Network Volume ComfyUI Worker](https://via.placeholder.com/800x200/1a1a1a/ffffff?text=Network+Volume+ComfyUI+Worker)
 
-> Custom RunPod serverless worker optimized for existing ComfyUI installations on network volumes
+---
 
-## What is included?
+Custom RunPod serverless worker optimized for **existing ComfyUI installations** on network volumes.
 
-This worker is specifically designed for **network volume deployments** where ComfyUI is already installed and configured. Unlike standard workers that install ComfyUI in the container, this worker:
+---
 
-- Connects to your existing ComfyUI installation at `/workspace/ComfyUI`
-- Preserves your exact startup commands and environment setup
-- Uses your custom models, nodes, and configurations
-- Starts ComfyUI once at container boot for optimal performance
+[![RunPod](https://api.runpod.io/badge/101world/runpod-comfyui-handler)](https://www.runpod.io/console/hub)
 
-## Network Volume Requirements
+---
 
-- **ComfyUI Installation**: Pre-installed at `/workspace/ComfyUI` 
-- **Python Environment**: Virtual environment at `/workspace/ComfyUI/venv`
-- **Models**: FLUX models (flux1-dev.safetensors, clip_l.safetensors, t5xxl_fp8_e4m3fn.safetensors, ae.safetensors)
-- **Port Configuration**: ComfyUI configured to run on port 3001
+## What makes this different?
+
+This worker is specifically designed for users who already have ComfyUI installed on a RunPod network volume. Instead of downloading and installing ComfyUI in the container (which takes 3+ minutes), it connects to your existing installation for **instant startup**.
+
+## Requirements
+
+- **RunPod Network Volume** with ComfyUI at `/workspace/ComfyUI`
+- **Virtual Environment** at `/workspace/ComfyUI/venv` 
+- **FLUX Models** (flux1-dev, clip_l, t5xxl_fp8_e4m3fn, ae)
+
+## Key Features
+
+ **Instant Startup** - ComfyUI starts at container boot, not per request  
+ **Network Volume Optimized** - Uses your existing ComfyUI installation  
+ **FLUX Ready** - Optimized for Social Twin and professional portraits  
+ **Websocket Communication** - Real-time job monitoring  
+ **Cost Effective** - 5GB container vs 30GB+ official images  
 
 ## Usage
 
-The worker accepts standard ComfyUI workflow inputs:
+Deploy via GitHub integration and test with the included Social Twin workflow:
 
-| Parameter  | Type     | Required | Description                                                                                     |
-| :--------- | :------- | :------- | :---------------------------------------------------------------------------------------------- |
-| `workflow` | `object` | **Yes**  | Complete ComfyUI workflow in API JSON format exported from ComfyUI interface                   |
-| `images`   | `array`  | No       | Optional input images array with `name` and `image` (base64) fields                           |
+```json
+{
+  "input": {
+    "workflow": {
+      "6": {
+        "inputs": {
+          "text": "professional headshot portrait, studio lighting",
+          "clip": ["30", 1]
+        },
+        "class_type": "CLIPTextEncode"
+      }
+    }
+  }
+}
+```
 
-## Architecture Benefits
+## Architecture
 
-**Network Volume Approach:**
--  Persistent model storage (no re-download)
--  Custom node configurations preserved
--  Fast container startup (ComfyUI already installed)
--  Shared storage across multiple endpoints
+Unlike official workers that install ComfyUI per container, this worker:
+1. **Container Boot**: Starts ComfyUI from network volume once
+2. **Request Processing**: Handler processes jobs via websocket
+3. **Result**: Sub-second response times instead of 3+ minute timeouts
 
-**Optimized Startup:**
--  ComfyUI starts once at container boot
--  Handler only processes requests (no per-request startup)
--  WebSocket communication for efficiency
--  Sub-second request processing after warmup
-
-## Deployment
-
-Deploy using RunPod GitHub integration with network volume attached at `/workspace`.
+Perfect for users with existing ComfyUI setups who want serverless efficiency.

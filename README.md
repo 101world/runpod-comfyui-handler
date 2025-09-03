@@ -1,151 +1,166 @@
-# RunPod ComfyUI Handler - Network Volume Edition
+# Network Volume ComfyUI Worker
 
-> Optimized RunPod serverless worker for existing ComfyUI installations on network volumes
+> Optimized RunPod serverless worker for **existing ComfyUI installations** on network volumes
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)
-![RunPod](https://img.shields.io/badge/platform-RunPod-purple.svg)
+![Network Volume Architecture](https://via.placeholder.com/800x200/1a1a1a/ffffff?text=Network+Volume+ComfyUI+Worker)
 
----
+This RunPod worker is specifically designed for users who already have ComfyUI installed on a network volume. Instead of downloading and installing ComfyUI in the container, it connects to your existing installation for instant startup and cost-effective operation.
 
-## Overview
+##  Key Advantages
 
-This RunPod worker is specifically designed for **network volume deployments** where ComfyUI is already installed and configured. Instead of installing ComfyUI in the container, it connects to your existing installation, preserving your custom setup while providing optimal performance.
+- ** Instant Startup**: ComfyUI starts at container boot, not per request  
+- ** Cost Effective**: 5GB container vs 30GB+ official images
+- ** Persistent Storage**: Models stay on volume across deployments
+- ** No Timeouts**: Eliminates 3+ minute startup delays
+- ** FLUX Ready**: Optimized for Social Twin and professional workflows
 
-## Key Features
+##  Repository Structure
 
-###  Network Volume Optimization
-- Connects to existing ComfyUI at `/workspace/ComfyUI`
-- Preserves your exact startup commands and environment
-- No model re-downloading (persistent on network volume)
-- Custom nodes and configurations maintained
-
-###  Performance Benefits
-- ComfyUI starts once at container boot
-- Handler processes requests only (no per-request startup)
-- WebSocket communication for efficiency
-- Sub-second processing after warmup
-
-###  FLUX Model Support
-- Optimized for FLUX.1-dev workflows
-- Social Twin portrait generation ready
-- Professional headshot workflows included
-
-## Quick Start
-
-### 1. Network Volume Requirements
-- **ComfyUI Installation**: `/workspace/ComfyUI`
-- **Python Environment**: `/workspace/ComfyUI/venv`
-- **FLUX Models**: flux1-dev.safetensors, clip_l.safetensors, t5xxl_fp8_e4m3fn.safetensors, ae.safetensors
-- **Working Command**: `cd /workspace/ComfyUI && source venv/bin/activate && python main.py --listen --port 3001`
-
-### 2. Deploy to RunPod
-1. Create serverless endpoint
-2. Use GitHub integration: `101world/runpod-comfyui-handler`
-3. Attach your network volume at `/workspace`
-4. Deploy and test
-
-### 3. Test Workflow
-```bash
-# Set your API key
-export RUNPOD_API_KEY=""your_api_key""
-node test-handler.js
-
-# Or use curl with test_input.json
-curl -X POST \
-  -H ""Authorization: Bearer "" \
-  -H ""Content-Type: application/json"" \
-  -d @test_input.json \
-  https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync
-```
-
-## Architecture
-
-### Container Structure
 ```
 runpod-comfyui-handler/
- src/
-    start.sh              # ComfyUI startup script
- docs/
-    deployment.md         # Deployment guide
-    network-volume.md     # Volume setup guide
- tests/
-    test_handler.py       # Unit tests
- .runpod/
-    README.md            # RunPod hub documentation
- Dockerfile               # Network volume optimized
- handler.py               # WebSocket request processor
- requirements.txt         # Minimal dependencies
- test_input.json         # FLUX workflow sample
- test-handler.js         # API testing script
+ .runpod/              # RunPod platform configurations
+ docs/                 # Documentation
+    deployment.md     # Deployment guide
+    network-volume-setup.md
+ src/                  # Source code
+    start.sh          # ComfyUI startup script
+ tests/                # Unit tests
+ Dockerfile           # Container definition
+ handler.py           # Request processor
+ requirements.txt     # Python dependencies
+ test_input.json      # FLUX workflow sample
+ test-handler.js      # API testing script
 ```
 
-### Startup Flow
-1. **Container Boot**: `start.sh` executes
-2. **ComfyUI Launch**: Your exact command runs
-3. **Readiness Check**: WebSocket connection verified
-4. **Handler Start**: Request processing begins
-5. **Ready**: Sub-second response times
+##  Architecture
 
-## Network Volume vs Standard Workers
+### Traditional Workers
+```
+Request  Start ComfyUI (3+ min)  Process  Stop ComfyUI
+```
 
-| Aspect | Network Volume (This) | Standard Workers |
-|--------|----------------------|------------------|
-| **ComfyUI Installation** | Pre-installed on volume | Downloaded each build |
-| **Model Storage** | Persistent on volume | Downloaded each container |
-| **Custom Nodes** | Preserved configurations | Lost on rebuild |
-| **Startup Time** | ~30 seconds | ~5-10 minutes |
-| **Storage Cost** | Volume storage only | Volume + container storage |
-| **Flexibility** | Full control | Limited to pre-built images |
+### Network Volume Worker  
+```
+Container Boot  Start ComfyUI (30s)  Ready
+Request  Process (seconds)  Response
+```
 
-## API Specification
+##  Prerequisites
 
-### Input Format
+- **RunPod Network Volume** with ComfyUI at `/workspace/ComfyUI`
+- **Virtual Environment** at `/workspace/ComfyUI/venv`
+- **FLUX Models**: flux1-dev, clip_l, t5xxl_fp8_e4m3fn, ae
+
+##  Quick Start
+
+### 1. Set Up Network Volume
+See [Network Volume Setup Guide](docs/network-volume-setup.md) for detailed instructions.
+
+### 2. Deploy Worker
+See [Deployment Guide](docs/deployment.md) for GitHub integration deployment.
+
+### 3. Test Deployment
+```bash
+# Set your API key
+export RUNPOD_API_KEY="your_api_key_here"
+
+# Test with Social Twin workflow  
+node test-handler.js
+```
+
+##  Sample Workflow
+
+The included `test_input.json` contains a FLUX-based Social Twin workflow:
+
 ```json
 {
-  ""input"": {
-    ""workflow"": {
-      ""6"": {
-        ""inputs"": {
-          ""text"": ""professional headshot portrait"",
-          ""clip"": [""30"", 1]
+  "input": {
+    "workflow": {
+      "6": {
+        "inputs": {
+          "text": "professional headshot portrait of a confident business person, studio lighting, clean background, high quality, detailed",
+          "clip": ["30", 1]
         },
-        ""class_type"": ""CLIPTextEncode""
+        "class_type": "CLIPTextEncode"
       }
     }
   }
 }
 ```
 
-### Output Format
-```json
-{
-  ""output"": {
-    ""images"": [
-      {
-        ""filename"": ""ComfyUI_00001_.png"",
-        ""type"": ""base64"",
-        ""data"": ""iVBORw0KGgoAAAANSUhEUg...""
-      }
-    ]
-  }
-}
+##  Performance Comparison
+
+| Method | Container Size | Startup Time | Request Time | Cost/Hour |
+|--------|---------------|--------------|--------------|-----------|
+| Official | 30GB+ | 3-5 min | 3-5 min | Higher |
+| Network Volume | 5GB | 30 sec | 10-30 sec | Lower |
+
+##  Configuration
+
+### Environment Variables
+```bash
+COMFY_HOST=127.0.0.1          # ComfyUI host
+COMFY_PORT=3001               # ComfyUI port  
+SERVE_API_LOCALLY=false       # Local API mode
 ```
 
-## Documentation
+### Network Volume Requirements
+```bash
+/workspace/ComfyUI/           # ComfyUI installation
+ main.py                   # ComfyUI main script
+ venv/                     # Virtual environment
+    bin/activate         # Activation script
+ models/                   # Model directories
+     unet/                 # FLUX UNet models
+     clip/                 # CLIP text encoders  
+     vae/                  # VAE models
+```
 
--  [Deployment Guide](docs/deployment.md) - Complete deployment instructions
--  [Network Volume Setup](docs/network-volume.md) - Volume preparation guide
--  [Testing Guide](tests/) - Unit tests and validation
+##  Development
 
-## Based On Official Patterns
+### Local Testing
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-This implementation follows the proven architecture from:
+# Run tests
+python -m pytest tests/
+
+# Test handler locally
+python handler.py
+```
+
+### Docker Build
+```bash
+# Build container
+docker build --platform linux/amd64 -t network-volume-comfyui .
+
+# Run locally (requires network volume mount)
+docker run -v /path/to/volume:/workspace network-volume-comfyui
+```
+
+##  Documentation
+
+- [Deployment Guide](docs/deployment.md) - Complete deployment instructions
+- [Network Volume Setup](docs/network-volume-setup.md) - Volume preparation guide  
+- [API Reference](test_input.json) - Sample workflow format
+
+##  Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+##  License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+##  Acknowledgments
+
+This implementation follows the proven architecture patterns from:
 - [runpod-workers/worker-template](https://github.com/runpod-workers/worker-template)
 - [runpod-workers/worker-comfyui](https://github.com/runpod-workers/worker-comfyui)
 
-Specifically adapted for network volume deployments with user's exact ComfyUI setup.
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file for details.
+Adapted specifically for network volume setups and FLUX workflows.
